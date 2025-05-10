@@ -1,50 +1,72 @@
+from typing import Any
+
 import pytest
-from langchain_core.documents import Document
 from pytest_mock import MockerFixture
 
-from langchain_community.retrievers.needle import NeedleRetriever
 
-
-# Mock class to simulate search results
+# Mock class to simulate search results from Needle API
 class MockSearchResult:
-    def __init__(self, content):
+    def __init__(self, content: str) -> None:
         self.content = content
 
 
-# Mock class to simulate NeedleClient
+# Mock class to simulate NeedleClient and its collections behavior
 class MockNeedleClient:
-    class MockCollections:
-        def search(self, collection_id: str, text: str):
-            return [
-                MockSearchResult(content="Result for query: " + text),
-                MockSearchResult(content="Another result for query: " + text),
-            ]
-
-    def __init__(self):
+    def __init__(self, api_key: str) -> None:
+        self.api_key = api_key
         self.collections = self.MockCollections()
 
+    class MockCollections:
+        def search(self, collection_id: str, text: str) -> list[MockSearchResult]:
+            return [
+                MockSearchResult(content=f"Result for query: {text}"),
+                MockSearchResult(content=f"Another result for query: {text}"),
+            ]
 
-# Test the NeedleRetriever initialization
+
+@pytest.mark.requires("needle")
 def test_needle_retriever_initialization() -> None:
+    """
+    Test that the NeedleRetriever is initialized correctly.
+    """
+    from langchain_community.retrievers.needle import NeedleRetriever  # noqa: I001
+
     retriever = NeedleRetriever(
-        needle_api_key="mock_api_key", collection_id="mock_collection_id"
+        needle_api_key="mock_api_key",
+        collection_id="mock_collection_id",
     )
 
     assert retriever.needle_api_key == "mock_api_key"
     assert retriever.collection_id == "mock_collection_id"
 
 
-# Need to pass real API key and collection ID to test this function, otherwise fails
-@pytest.mark.usefixtures("socket_enabled")
+@pytest.mark.requires("needle")
 def test_get_relevant_documents(mocker: MockerFixture) -> None:
-    # Mock the NeedleClient
+    """
+    Test that the retriever correctly fetches documents.
+    """
+    from langchain_community.retrievers.needle import NeedleRetriever  # noqa: I001
+
+    # Patch the actual NeedleClient import path used in the NeedleRetriever
     mocker.patch("needle.v1.NeedleClient", new=MockNeedleClient)
 
+    # Initialize the retriever with mocked API key and collection ID
     retriever = NeedleRetriever(
-        needle_api_key="YOUR_API_KEY", collection_id="YOUR_COLLECTION_ID"
+        needle_api_key="mock_api_key",
+        collection_id="mock_collection_id",
     )
 
-    query = "What is RAG?"
-    retrieved_documents = retriever._get_relevant_documents(query, run_manager=None)
+    mock_run_manager: Any = None
 
-    assert len(retrieved_documents) == 5
+    # Perform the search
+    query = "What is RAG?"
+    retrieved_documents = retriever._get_relevant_documents(
+        query, run_manager=mock_run_manager
+    )
+
+    # Validate the results
+    assert len(retrieved_documents) == 2
+    assert retrieved_documents[0].page_content == "Result for query: What is RAG?"
+    assert (
+        retrieved_documents[1].page_content == "Another result for query: What is RAG?"
+    )
